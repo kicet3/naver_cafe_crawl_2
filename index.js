@@ -112,10 +112,10 @@ async function main() {
     result_json = JSON.stringify(result, null, 2)
     
     await ensureDirectoryExists('./fixed')
-    let files = fs.readdirSync(folderPath);
+    let files = fs.readdirSync(config.output.dir);
     files.sort();
 
-    const fullPaths = files.map(file => path.join(folderPath, file));
+    const fullPaths = files.map(file => path.join(config.output.dir, file));
     for (const file of fullPaths) {
       const content = fs.readFileSync(file, 'utf-8');
       const json = JSON.parse(content);
