@@ -118,8 +118,8 @@ async function main() {
     const fullPaths = files.map(file => path.join(config.output.dir, file));
     for (const file of fullPaths) {
       const content = fs.readFileSync(file, 'utf-8');
-      const json = JSON.parse(content);
-      let new_json = json.map(item =>{
+      const a = JSON.parse(content);
+      let new_json = a.articles.map(item =>{
         item.menuName = result[item.id];
         if (config.exclude.includes(item.menuName)) {
           return null
