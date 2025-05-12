@@ -11,6 +11,8 @@ module.exports = {
     loginUrl: 'https://nid.naver.com/nidlogin.login'
   },
   
+  exclude: process.env.EXCLUDE_CATEGORY || [],
+
   // 크롤링 설정
   crawler: {
     cafeId: process.env.CAFE_ID || '23529966',

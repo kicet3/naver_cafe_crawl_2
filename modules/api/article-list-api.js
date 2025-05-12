@@ -110,13 +110,13 @@ function processArticleListResponse(articleList) {
         id: item.articleId.toString(),
         title: item.subject || '제목 없음',
         author: getAuthorFromItem(item),
+        menuName : item.menuName,
         date: formatDate(item.writeDateTimestamp),
         views: item.readCount || 0,
         commentCount: item.commentCount || 0,
         summary: item.summary || '',
         url: makeArticleUrl(item.cafeId, item.articleId)
       };
-      
       articles.push(articleData);
     } catch (error) {
       log(`게시글 정보 변환 중 오류: ${error.message}`, 'warn');

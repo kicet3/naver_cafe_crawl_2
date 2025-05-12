@@ -105,82 +105,35 @@ async function main() {
     }
     
     log(`최종 ${allArticles.length}개의 게시글 목록 수집 완료`);
+    const result = allArticles.reduce((acc, item) => {
+      acc[item.id] = item.menuName;
+      return acc;
+    }, {});
+    result_json = JSON.stringify(result, null, 2)
     
-    // 2. 게시글을 파일당 게시글 수로 그룹화
-    const articleGroups = chunkArray(allArticles, articlesPerFile);
-    log(`게시글을 ${articleGroups.length}개 그룹으로 나누어 처리합니다.`);
-    
-    // 3. 각 그룹별로 게시글 상세 정보 수집 및 저장 (배치 처리 사용)
-    for (let i = 0; i < articleGroups.length; i++) {
-      const group = articleGroups[i];
-      const startIdx = i * articlesPerFile + 1;
-      const endIdx = startIdx + group.length - 1;
-      
-      log(`그룹 ${i+1}/${articleGroups.length} (${startIdx}-${endIdx}) 게시글 상세 정보 수집 중...`);
-      
-      // 배치 처리 크롤러 사용 (5개씩 동시에 처리)
-      const detailedArticles = await getBatchArticleDetails(page, group, {
-        batchSize: 5, // 한 번에 5개씩 처리
-        minBatchDelay: 1500, // 배치 간 최소 지연 시간 (ms)
-        maxBatchDelay: 3000, // 배치 간 최대 지연 시간 (ms)
-        includeComments: true,
-        includeImages: true,
-        safeModeEnabled: true, // 안전 모드 활성화 (순차적으로 처리하되 약간의 지연 사용)
-        
-        // 진행 상황 표시 콜백 함수
-        progressCallback: (current, total, article) => {
-          const globalCurrent = startIdx + current - 1;
-          const globalTotal = allArticles.length;
-          log(`게시글 ${globalCurrent}/${globalTotal} 처리 완료: ${article.title.substring(0, 30)}${article.title.length > 30 ? '...' : ''}`);
+    await ensureDirectoryExists('./fixed')
+    let files = fs.readdirSync(folderPath);
+    files.sort();
+
+    const fullPaths = files.map(file => path.join(folderPath, file));
+    for (const file of fullPaths) {
+      const content = fs.readFileSync(file, 'utf-8');
+      const json = JSON.parse(content);
+      let new_json = json.map(item =>{
+        item.menuName = result[item.id];
+        if (config.exclude.includes(item.menuName)) {
+          return null
         }
-      });
-      
-      // 그룹 처리 완료 후 파일 저장
-      const fileName = `articles_${startIdx}_${endIdx}.json`;
-      const filePath = path.join(config.output.dir, fileName);
-      
-      // JSON 파일로 저장
-      await saveAsJson(filePath, { articles: detailedArticles });
-      log(`${fileName} 저장 완료 (${detailedArticles.length}개 게시글)`);
-      
-      // 그룹 간 딜레이 (크롤링 감지 방지)
-      if (i < articleGroups.length - 1) {
-        const delayTime = getRandomDelay(config.crawler.delay.min * 2, config.crawler.delay.max * 2);
-        log(`다음 그룹 처리 전 ${delayTime}ms 대기 중...`);
-        await sleep(delayTime);
-      }
+        if (item.comment.length == 0) {
+          return null
+        }
+        return item
+      }).filter(item => item !== null)
+      fs.writeFileSync(`./fixed/${file}`, JSON.stringify(new_json, null, 2), 'utf-8');
     }
     
-    log('모든 게시글 크롤링 완료', 'success');
+
     
-    // 최신 게시글 ID 찾기
-    const latestArticleId = findLatestArticleId(allArticles);
-    if (latestArticleId) {
-      log(`가장 최신 게시글 ID: ${latestArticleId}`);
-      
-      // .env 파일에 마지막 게시글 ID 업데이트
-      await updateLastArticleId(latestArticleId);
-      log(`다음 크롤링을 위해 마지막 게시글 ID를 ${latestArticleId}로 업데이트했습니다.`);
-    }
-    
-    // 요약 정보 저장 (모든 게시글의 기본 정보만 담긴 파일)
-    const summaryPath = path.join(config.output.dir, 'articles_summary.json');
-    await saveAsJson(summaryPath, { 
-      totalCount: allArticles.length,
-      collectedAt: new Date().toISOString(),
-      cafeId: config.crawler.cafeId,
-      lastArticleId: latestArticleId || '',
-      articles: allArticles.map(article => ({
-        id: article.id,
-        title: article.title,
-        author: article.author,
-        date: article.date,
-        url: article.url,
-        views: article.views,
-        commentCount: article.commentCount
-      }))
-    });
-    log('게시글 요약 정보 저장 완료: articles_summary.json');
     
   } catch (error) {
     log(`크롤링 중 오류 발생: ${error.message}`, 'error');
