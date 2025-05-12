@@ -112,24 +112,28 @@ async function main() {
     result_json = JSON.stringify(result, null, 2)
     
     await ensureDirectoryExists('./fixed')
-    let files = fs.readdirSync(config.output.dir);
-    files.sort();
-
-    const fullPaths = files.map(file => path.join(config.output.dir, file));
+    const files = fs.readdirSync(config.output.dir);
+    
+    const fullPaths = files.map(file => path.resolve(config.output.dir, file));
+    let i = 1
     for (const file of fullPaths) {
       const content = fs.readFileSync(file, 'utf-8');
-      const a = JSON.parse(content);
-      let new_json = a.articles.map(item =>{
+      const k = JSON.parse(content);
+      const new_json = k.articles.map(item =>{
         item.menuName = result[item.id];
-        if (config.exclude.includes(item.menuName)) {
+        if (config.exclude.includes(item?.menuName)) {
+          console.log('A')
           return null
         }
-        if (item.comment.length == 0) {
+        if (item?.comments.length == null){
           return null
         }
+        console.log(item)
         return item
       }).filter(item => item !== null)
-      fs.writeFileSync(`./fixed/${file}`, JSON.stringify(new_json, null, 2), 'utf-8');
+      fs.writeFileSync(`./fixed/${i}.json`, JSON.stringify(new_json, null, 2), 'utf-8');
+      i+=1
+
     }
     
 

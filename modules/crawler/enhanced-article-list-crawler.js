@@ -135,6 +135,7 @@ async function getArticleList(page, options = {}) {
  * @param {number} options.totalRequired 필요한 총 게시글 수 (기본값: 50)
  * @param {string} options.lastArticleId 마지막으로 수집한 게시글 ID (기본값: '')
  * @param {boolean} options.continueFromLast 마지막 ID 이후부터 수집 (기본값: false)
+ * @param {number} options.batchSize 한 번에 수집할 페이지 수 (기본값: 5)
  * @returns {Promise<Array>} 모든 페이지의 게시글 목록 배열
  */
 async function getMultiPageArticles(page, options = {}) {
@@ -148,7 +149,8 @@ async function getMultiPageArticles(page, options = {}) {
     forceApi = false,
     totalRequired = 50,
     lastArticleId = '',
-    continueFromLast = false
+    continueFromLast = false,
+    batchSize = 5
   } = options;
   
   let allArticles = [];
@@ -164,48 +166,61 @@ async function getMultiPageArticles(page, options = {}) {
     continueFromLast
   };
   
-  for (let pageNum = startPage; pageNum <= endPage; pageNum++) {
-    log(`${pageNum}페이지 게시글 목록 가져오는 중...`);
+  // 페이지 범위를 batchSize 단위로 나누어 처리
+  for (let batchStart = startPage; batchStart <= endPage; batchStart += batchSize) {
+    const batchEnd = Math.min(batchStart + batchSize - 1, endPage);
+    log(`페이지 ${batchStart}부터 ${batchEnd}까지의 게시글 목록 배치 처리 시작...`);
     
-    // 게시글 목록 가져오기
-    const articles = await getArticleList(page, {
-      ...commonOptions,
-      pageNum,
-      requiredCount: Math.min(pageSize, totalRequired - allArticles.length)
-    });
-    
-    // 새 게시글이 없는 경우 (이전에 수집한 ID 이후가 없음)
-    if (articles.length === 0 && continueFromLast && lastArticleId) {
-      log(`${pageNum}페이지에서 이전에 수집한 ID ${lastArticleId} 이후의 새 게시글이 없습니다.`);
+    // 배치 단위로 페이지 처리
+    for (let pageNum = batchStart; pageNum <= batchEnd; pageNum++) {
+      log(`${pageNum}페이지 게시글 목록 가져오는 중...`);
       
-      // 이미 충분한 게시글을 수집했거나 더 이상 페이지가 없으면 종료
-      if (allArticles.length >= totalRequired || pageNum >= endPage) {
-        break;
+      // 게시글 목록 가져오기
+      const articles = await getArticleList(page, {
+        ...commonOptions,
+        pageNum,
+        requiredCount: Math.min(pageSize, totalRequired - allArticles.length)
+      });
+      
+      // 새 게시글이 없는 경우 (이전에 수집한 ID 이후가 없음)
+      if (articles.length === 0 && continueFromLast && lastArticleId) {
+        log(`${pageNum}페이지에서 이전에 수집한 ID ${lastArticleId} 이후의 새 게시글이 없습니다.`);
+        
+        // 이미 충분한 게시글을 수집했거나 더 이상 페이지가 없으면 종료
+        if (allArticles.length >= totalRequired || pageNum >= batchEnd) {
+          break;
+        }
+        
+        // 새 게시글을 찾을 때까지 다음 페이지로 계속 진행
+        await sleep(getRandomDelay(config.crawler.delay.min, config.crawler.delay.max));
+        continue;
       }
       
-      // 새 게시글을 찾을 때까지 다음 페이지로 계속 진행
-      await sleep(getRandomDelay(config.crawler.delay.min, config.crawler.delay.max));
-      continue;
+      // 결과에 추가
+      allArticles = allArticles.concat(articles);
+      
+      // 필요한 게시글 수를 모두 가져온 경우 종료
+      if (allArticles.length >= totalRequired) {
+        log(`필요한 게시글 수(${totalRequired}개)를 모두 가져와 종료합니다.`);
+        return allArticles;
+      }
+      
+      // 페이지 간 딜레이
+      if (pageNum < batchEnd && allArticles.length < totalRequired) {
+        await sleep(getRandomDelay(config.crawler.delay.min, config.crawler.delay.max));
+      }
+      
+      // 더 이상 게시글이 없으면 종료
+      if (articles.length === 0 || articles.length < pageSize) {
+        log(`페이지 ${pageNum}에서 게시글이 ${articles.length}개 밖에 없어 종료합니다.`);
+        return allArticles;
+      }
     }
     
-    // 결과에 추가
-    allArticles = allArticles.concat(articles);
-    
-    // 필요한 게시글 수를 모두 가져온 경우 종료
-    if (allArticles.length >= totalRequired) {
-      log(`필요한 게시글 수(${totalRequired}개)를 모두 가져와 종료합니다.`);
-      break;
-    }
-    
-    // 페이지 간 딜레이
-    if (pageNum < endPage && allArticles.length < totalRequired) {
-      await sleep(getRandomDelay(config.crawler.delay.min, config.crawler.delay.max));
-    }
-    
-    // 더 이상 게시글이 없으면 종료
-    if (articles.length === 0 || articles.length < pageSize) {
-      log(`페이지 ${pageNum}에서 게시글이 ${articles.length}개 밖에 없어 종료합니다.`);
-      break;
+    // 배치 간 더 긴 딜레이 추가 (API 제한 방지)
+    if (batchStart + batchSize <= endPage && allArticles.length < totalRequired) {
+      log(`페이지 배치 처리 완료, 다음 배치 전 잠시 대기...`);
+      await sleep(getRandomDelay(config.crawler.delay.max, config.crawler.delay.max * 2));
     }
   }
   

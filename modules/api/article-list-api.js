@@ -184,6 +184,7 @@ function makeArticleUrl(cafeId, articleId) {
  * @param {number} options.pageSize 페이지당 게시글 수 (기본값: 50)
  * @param {string} options.sortBy 정렬 기준 (기본값: 'TIME')
  * @param {string} options.menuId 메뉴 ID (기본값: '0', 전체글)
+ * @param {number} options.batchSize 한 번에 수집할 페이지 수 (기본값: 5)
  * @returns {Promise<Array>} 모든 페이지의 게시글 목록 배열
  */
 async function getMultiPageArticles(page, options = {}) {
@@ -192,32 +193,46 @@ async function getMultiPageArticles(page, options = {}) {
     endPage = 1,
     pageSize = 50,
     sortBy = 'TIME',
-    menuId = '0'
+    menuId = '0',
+    batchSize = 5
   } = options;
   
   let allArticles = [];
   
-  for (let pageNum = startPage; pageNum <= endPage; pageNum++) {
-    log(`${pageNum}페이지 게시글 목록 가져오는 중...`);
+  // 페이지 범위를 batchSize 단위로 나누어 처리
+  for (let batchStart = startPage; batchStart <= endPage; batchStart += batchSize) {
+    const batchEnd = Math.min(batchStart + batchSize - 1, endPage);
+    log(`페이지 ${batchStart}부터 ${batchEnd}까지의 게시글 목록 배치 처리 시작...`);
     
-    const articles = await getArticleListFromApi(page, {
-      pageNum,
-      pageSize,
-      sortBy,
-      menuId
-    });
-    
-    allArticles = allArticles.concat(articles);
-    
-    // 페이지 간 딜레이
-    if (pageNum < endPage) {
-      await sleep(getRandomDelay(config.crawler.delay.min, config.crawler.delay.max));
+    // 배치 단위로 페이지 처리
+    for (let pageNum = batchStart; pageNum <= batchEnd; pageNum++) {
+      log(`${pageNum}페이지 게시글 목록 가져오는 중...`);
+      
+      const articles = await getArticleListFromApi(page, {
+        pageNum,
+        pageSize,
+        sortBy,
+        menuId
+      });
+      
+      allArticles = allArticles.concat(articles);
+      
+      // 페이지 간 딜레이
+      if (pageNum < batchEnd) {
+        await sleep(getRandomDelay(config.crawler.delay.min, config.crawler.delay.max));
+      }
+      
+      // 더 이상 게시글이 없으면 종료
+      if (articles.length === 0 || articles.length < pageSize) {
+        log(`페이지 ${pageNum}에서 게시글이 ${articles.length}개 밖에 없어 종료합니다.`);
+        return allArticles;
+      }
     }
     
-    // 더 이상 게시글이 없으면 종료
-    if (articles.length === 0 || articles.length < pageSize) {
-      log(`페이지 ${pageNum}에서 게시글이 ${articles.length}개 밖에 없어 종료합니다.`);
-      break;
+    // 배치 간 더 긴 딜레이 추가 (API 제한 방지)
+    if (batchStart + batchSize <= endPage) {
+      log(`페이지 배치 처리 완료, 다음 배치 전 잠시 대기...`);
+      await sleep(getRandomDelay(config.crawler.delay.max, config.crawler.delay.max * 2));
     }
   }
   
